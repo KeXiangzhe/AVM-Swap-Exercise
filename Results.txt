@@ -1,0 +1,96 @@
+======================================================================
+AVM Programming Exercise: Swap Curve
+======================================================================
+
+Reference Date: 2026-01-07
+Notional: 1,000,000
+
+======================================================================
+QUESTION 1: Curve Construction (Dual-Curve Bootstrap)
+======================================================================
+
+Discount spread: -38 bps over IBOR curve
+Float leg: semi-annual reset/pay
+Fixed leg: annual pay
+Day count: Actual/Actual
+Business day adjustment: None
+Spot lag: Zero
+
+IBOR (Forward) Curve:
+Time (Y)   Zero Rate (%)   Discount Factor
+----------------------------------------
+0.5000     4.110000        0.97986380     
+1.0000     4.143756        0.96021120     
+2.0000     3.796139        0.92943472     
+3.0000     3.592957        0.90269923     
+5.0000     3.401978        0.85462861     
+7.0000     3.393841        0.80803582     
+10.0000    3.527221        0.73925014     
+
+Discount Curve:
+Time (Y)   Zero Rate (%)   Discount Factor
+----------------------------------------
+0.5000     3.730000        0.98169145     
+1.0000     3.763756        0.96372765     
+2.0000     3.416139        0.93604668     
+3.0000     3.212957        0.91208529     
+5.0000     3.021978        0.86873508     
+7.0000     3.013841        0.82578504     
+10.0000    3.147221        0.76061702     
+
+======================================================================
+QUESTION 2: 9Y Par Swap Pricing
+======================================================================
+
+Swap Details:
+  Start Date: 2026-01-07
+  End Date: 2035-01-07
+  Tenor: 9 years
+  Notional: 1,000,000
+
+Results:
+  Par Swap Rate: 3.091401%
+  DV01: -625.12
+  Gamma: 0.83
+
+  Verification - Par Swap PV: 0.00 (should be ~0)
+
+======================================================================
+QUESTION 3: Valuation 3 Months Later (Linear Interpolation)
+======================================================================
+
+Valuation Date: 2026-04-07
+(Assuming curve unchanged)
+
+Results:
+  Fixed Leg Accrual: 7622.63
+  Float Leg Accrual: 10134.25
+  Net Accrual (Fixed - Float): -2511.61
+  Dirty PV: -3210.46
+  Clean PV: -698.85
+
+======================================================================
+QUESTION 4: Cubic Spline Interpolation
+======================================================================
+
+Boundary conditions:
+  f(0) = f(6M)
+  f''(0) = f''(10Y) = 0
+
+Results (with Cubic Spline for IBOR curve):
+  Fixed Leg Accrual: 7622.63
+  Float Leg Accrual: 10133.72
+  Net Accrual (Fixed - Float): -2511.08
+  Dirty PV: -2758.28
+  Clean PV: -247.20
+
+======================================================================
+Comparison: Linear vs Cubic Spline
+======================================================================
+  Clean PV (Linear):       -698.85
+  Clean PV (Cubic Spline): -247.20
+  Difference:              451.65
+
+======================================================================
+Exercise Complete
+======================================================================

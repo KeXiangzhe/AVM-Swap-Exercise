@@ -27,127 +27,163 @@ class Program
     private const double DiscountSpreadBps = -38.0;
     private const double Notional = 1_000_000.0;
     private const int SwapTenorYears = 9;
+    private static StreamWriter? _fileWriter;
 
     static void Main(string[] args)
     {
-        Console.WriteLine("=".PadRight(70, '='));
-        Console.WriteLine("AVM Programming Exercise: Swap Curve");
-        Console.WriteLine("=".PadRight(70, '='));
+        // Create output file
+        string outputPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "Results.txt");
+        outputPath = Path.GetFullPath(outputPath);
 
-        DateTime referenceDate = DateTime.Today;
-        Console.WriteLine($"\nReference Date: {referenceDate:yyyy-MM-dd}");
-        Console.WriteLine($"Notional: {Notional:N0}");
+        using (_fileWriter = new StreamWriter(outputPath))
+        {
+            WriteLine("=".PadRight(70, '='));
+            WriteLine("AVM Programming Exercise: Swap Curve");
+            WriteLine("=".PadRight(70, '='));
 
-        // Initialize services
-        var bootstrapper = new CurveBootstrapper();
-        var pricerService = new SwapPricerService();
-        var riskCalculator = new RiskCalculator(pricerService);
+            DateTime referenceDate = DateTime.Today;
+            WriteLine($"\nReference Date: {referenceDate:yyyy-MM-dd}");
+            WriteLine($"Notional: {Notional:N0}");
 
-        // Question 1: Build IBOR and Discount Curves using dual-curve methodology
-        Console.WriteLine("\n" + "=".PadRight(70, '='));
-        Console.WriteLine("QUESTION 1: Curve Construction (Dual-Curve Bootstrap)");
-        Console.WriteLine("=".PadRight(70, '='));
+            // Initialize services
+            var bootstrapper = new CurveBootstrapper();
+            var pricerService = new SwapPricerService();
+            var riskCalculator = new RiskCalculator(pricerService);
 
-        var (iborCurve, discountCurve) = bootstrapper.BootstrapCurves(referenceDate, MarketQuotes);
+            // Question 1: Build IBOR and Discount Curves using dual-curve methodology
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("QUESTION 1: Curve Construction (Dual-Curve Bootstrap)");
+            WriteLine("=".PadRight(70, '='));
 
-        Console.WriteLine($"\nDiscount spread: {DiscountSpreadBps} bps over IBOR curve");
-        Console.WriteLine("Float leg: semi-annual reset/pay");
-        Console.WriteLine("Fixed leg: annual pay");
-        Console.WriteLine("Day count: Actual/Actual");
-        Console.WriteLine("Business day adjustment: None");
-        Console.WriteLine("Spot lag: Zero");
+            var (iborCurve, discountCurve) = bootstrapper.BootstrapCurves(referenceDate, MarketQuotes);
 
-        iborCurve.Print("IBOR (Forward) Curve");
-        discountCurve.Print("Discount Curve");
+            WriteLine($"\nDiscount spread: {DiscountSpreadBps} bps over IBOR curve");
+            WriteLine("Float leg: semi-annual reset/pay");
+            WriteLine("Fixed leg: annual pay");
+            WriteLine("Day count: Actual/Actual");
+            WriteLine("Business day adjustment: None");
+            WriteLine("Spot lag: Zero");
 
-        // Question 2: 9Y Par Swap Pricing
-        Console.WriteLine("\n" + "=".PadRight(70, '='));
-        Console.WriteLine("QUESTION 2: 9Y Par Swap Pricing");
-        Console.WriteLine("=".PadRight(70, '='));
+            PrintCurve(iborCurve, "IBOR (Forward) Curve");
+            PrintCurve(discountCurve, "Discount Curve");
 
-        DateTime swapEndDate = referenceDate.AddYears(SwapTenorYears);
-        var swap = new Swap(referenceDate, swapEndDate, Notional);
+            // Question 2: 9Y Par Swap Pricing
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("QUESTION 2: 9Y Par Swap Pricing");
+            WriteLine("=".PadRight(70, '='));
 
-        double parRate = pricerService.CalculateParRate(swap, iborCurve, discountCurve, referenceDate);
-        swap.FixedRate = parRate;
+            DateTime swapEndDate = referenceDate.AddYears(SwapTenorYears);
+            var swap = new Swap(referenceDate, swapEndDate, Notional);
 
-        Console.WriteLine($"\nSwap Details:");
-        Console.WriteLine($"  Start Date: {swap.StartDate:yyyy-MM-dd}");
-        Console.WriteLine($"  End Date: {swap.EndDate:yyyy-MM-dd}");
-        Console.WriteLine($"  Tenor: {SwapTenorYears} years");
-        Console.WriteLine($"  Notional: {Notional:N0}");
+            double parRate = pricerService.CalculateParRate(swap, iborCurve, discountCurve, referenceDate);
+            swap.FixedRate = parRate;
 
-        Console.WriteLine($"\nResults:");
-        Console.WriteLine($"  Par Swap Rate: {parRate * 100:F6}%");
+            WriteLine($"\nSwap Details:");
+            WriteLine($"  Start Date: {swap.StartDate:yyyy-MM-dd}");
+            WriteLine($"  End Date: {swap.EndDate:yyyy-MM-dd}");
+            WriteLine($"  Tenor: {SwapTenorYears} years");
+            WriteLine($"  Notional: {Notional:N0}");
 
-        var riskMetrics = riskCalculator.CalculateRiskMetrics(swap, iborCurve, discountCurve, referenceDate);
-        Console.WriteLine($"  DV01: {riskMetrics.DV01:F2}");
-        Console.WriteLine($"  Gamma: {riskMetrics.Gamma:F2}");
+            WriteLine($"\nResults:");
+            WriteLine($"  Par Swap Rate: {parRate * 100:F6}%");
 
-        // Verify par swap has zero PV
-        double parSwapPV = pricerService.CalculateSwapPV(swap, iborCurve, discountCurve, referenceDate);
-        Console.WriteLine($"\n  Verification - Par Swap PV: {parSwapPV:F2} (should be ~0)");
+            var riskMetrics = riskCalculator.CalculateRiskMetrics(swap, iborCurve, discountCurve, referenceDate);
+            WriteLine($"  DV01: {riskMetrics.DV01:F2}");
+            WriteLine($"  Gamma: {riskMetrics.Gamma:F2}");
 
-        // Question 3: 3 Months Later - Accrual and Clean PV
-        Console.WriteLine("\n" + "=".PadRight(70, '='));
-        Console.WriteLine("QUESTION 3: Valuation 3 Months Later (Linear Interpolation)");
-        Console.WriteLine("=".PadRight(70, '='));
+            // Verify par swap has zero PV
+            double parSwapPV = pricerService.CalculateSwapPV(swap, iborCurve, discountCurve, referenceDate);
+            WriteLine($"\n  Verification - Par Swap PV: {parSwapPV:F2} (should be ~0)");
 
-        DateTime valuationDate3M = referenceDate.AddMonths(3);
-        Console.WriteLine($"\nValuation Date: {valuationDate3M:yyyy-MM-dd}");
-        Console.WriteLine("(Assuming curve unchanged)");
+            // Question 3: 3 Months Later - Accrual and Clean PV
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("QUESTION 3: Valuation 3 Months Later (Linear Interpolation)");
+            WriteLine("=".PadRight(70, '='));
 
-        // Shift curve reference date but keep same rates
-        var iborCurve3M = ShiftCurveReferenceDate(iborCurve, valuationDate3M);
-        var discountCurve3M = ShiftCurveReferenceDate(discountCurve, valuationDate3M);
+            DateTime valuationDate3M = referenceDate.AddMonths(3);
+            WriteLine($"\nValuation Date: {valuationDate3M:yyyy-MM-dd}");
+            WriteLine("(Assuming curve unchanged)");
 
-        var (cleanPV, fixedAccrual, floatAccrual) = pricerService.CalculateCleanPV(
-            swap, iborCurve3M, discountCurve3M, valuationDate3M);
+            // Shift curve reference date but keep same rates
+            var iborCurve3M = ShiftCurveReferenceDate(iborCurve, valuationDate3M);
+            var discountCurve3M = ShiftCurveReferenceDate(discountCurve, valuationDate3M);
 
-        double dirtyPV = pricerService.CalculateSwapPV(swap, iborCurve3M, discountCurve3M, valuationDate3M);
+            var (cleanPV, fixedAccrual, floatAccrual) = pricerService.CalculateCleanPV(
+                swap, iborCurve3M, discountCurve3M, valuationDate3M);
 
-        Console.WriteLine($"\nResults:");
-        Console.WriteLine($"  Fixed Leg Accrual: {fixedAccrual:F2}");
-        Console.WriteLine($"  Float Leg Accrual: {floatAccrual:F2}");
-        Console.WriteLine($"  Net Accrual (Fixed - Float): {fixedAccrual - floatAccrual:F2}");
-        Console.WriteLine($"  Dirty PV: {dirtyPV:F2}");
-        Console.WriteLine($"  Clean PV: {cleanPV:F2}");
+            double dirtyPV = pricerService.CalculateSwapPV(swap, iborCurve3M, discountCurve3M, valuationDate3M);
 
-        // Question 4: Cubic Spline Interpolation
-        Console.WriteLine("\n" + "=".PadRight(70, '='));
-        Console.WriteLine("QUESTION 4: Cubic Spline Interpolation");
-        Console.WriteLine("=".PadRight(70, '='));
+            WriteLine($"\nResults:");
+            WriteLine($"  Fixed Leg Accrual: {fixedAccrual:F2}");
+            WriteLine($"  Float Leg Accrual: {floatAccrual:F2}");
+            WriteLine($"  Net Accrual (Fixed - Float): {fixedAccrual - floatAccrual:F2}");
+            WriteLine($"  Dirty PV: {dirtyPV:F2}");
+            WriteLine($"  Clean PV: {cleanPV:F2}");
 
-        Console.WriteLine("\nBoundary conditions:");
-        Console.WriteLine("  f(0) = f(6M)");
-        Console.WriteLine("  f''(0) = f''(10Y) = 0");
+            // Question 4: Cubic Spline Interpolation
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("QUESTION 4: Cubic Spline Interpolation");
+            WriteLine("=".PadRight(70, '='));
 
-        // Create cubic spline interpolated curve (shifted to 3M forward)
-        var iborCurve3MSpline = ShiftCurveReferenceDate(iborCurve, valuationDate3M, useSpline: true);
+            WriteLine("\nBoundary conditions:");
+            WriteLine("  f(0) = f(6M)");
+            WriteLine("  f''(0) = f''(10Y) = 0");
 
-        // Use same discount curve from Q1 (shifted to new reference date)
-        var (cleanPVSpline, fixedAccrualSpline, floatAccrualSpline) = pricerService.CalculateCleanPV(
-            swap, iborCurve3MSpline, discountCurve3M, valuationDate3M);
+            // Create cubic spline interpolated curve (shifted to 3M forward)
+            var iborCurve3MSpline = ShiftCurveReferenceDate(iborCurve, valuationDate3M, useSpline: true);
 
-        double dirtyPVSpline = pricerService.CalculateSwapPV(swap, iborCurve3MSpline, discountCurve3M, valuationDate3M);
+            // Use same discount curve from Q1 (shifted to new reference date)
+            var (cleanPVSpline, fixedAccrualSpline, floatAccrualSpline) = pricerService.CalculateCleanPV(
+                swap, iborCurve3MSpline, discountCurve3M, valuationDate3M);
 
-        Console.WriteLine($"\nResults (with Cubic Spline for IBOR curve):");
-        Console.WriteLine($"  Fixed Leg Accrual: {fixedAccrualSpline:F2}");
-        Console.WriteLine($"  Float Leg Accrual: {floatAccrualSpline:F2}");
-        Console.WriteLine($"  Net Accrual (Fixed - Float): {fixedAccrualSpline - floatAccrualSpline:F2}");
-        Console.WriteLine($"  Dirty PV: {dirtyPVSpline:F2}");
-        Console.WriteLine($"  Clean PV: {cleanPVSpline:F2}");
+            double dirtyPVSpline = pricerService.CalculateSwapPV(swap, iborCurve3MSpline, discountCurve3M, valuationDate3M);
 
-        Console.WriteLine("\n" + "=".PadRight(70, '='));
-        Console.WriteLine("Comparison: Linear vs Cubic Spline");
-        Console.WriteLine("=".PadRight(70, '='));
-        Console.WriteLine($"  Clean PV (Linear):       {cleanPV:F2}");
-        Console.WriteLine($"  Clean PV (Cubic Spline): {cleanPVSpline:F2}");
-        Console.WriteLine($"  Difference:              {cleanPVSpline - cleanPV:F2}");
+            WriteLine($"\nResults (with Cubic Spline for IBOR curve):");
+            WriteLine($"  Fixed Leg Accrual: {fixedAccrualSpline:F2}");
+            WriteLine($"  Float Leg Accrual: {floatAccrualSpline:F2}");
+            WriteLine($"  Net Accrual (Fixed - Float): {fixedAccrualSpline - floatAccrualSpline:F2}");
+            WriteLine($"  Dirty PV: {dirtyPVSpline:F2}");
+            WriteLine($"  Clean PV: {cleanPVSpline:F2}");
 
-        Console.WriteLine("\n" + "=".PadRight(70, '='));
-        Console.WriteLine("Exercise Complete");
-        Console.WriteLine("=".PadRight(70, '='));
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("Comparison: Linear vs Cubic Spline");
+            WriteLine("=".PadRight(70, '='));
+            WriteLine($"  Clean PV (Linear):       {cleanPV:F2}");
+            WriteLine($"  Clean PV (Cubic Spline): {cleanPVSpline:F2}");
+            WriteLine($"  Difference:              {cleanPVSpline - cleanPV:F2}");
+
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("Exercise Complete");
+            WriteLine("=".PadRight(70, '='));
+        }
+
+        Console.WriteLine($"\nResults saved to: {outputPath}");
+    }
+
+    /// <summary>
+    /// Writes to both console and file.
+    /// </summary>
+    private static void WriteLine(string text)
+    {
+        Console.WriteLine(text);
+        _fileWriter?.WriteLine(text);
+    }
+
+    /// <summary>
+    /// Prints curve data to both console and file.
+    /// </summary>
+    private static void PrintCurve(Curve curve, string name)
+    {
+        WriteLine($"\n{name}:");
+        WriteLine($"{"Time (Y)",-10} {"Zero Rate (%)",-15} {"Discount Factor",-15}");
+        WriteLine(new string('-', 40));
+
+        foreach (var t in curve.Times)
+        {
+            double rate = curve.GetZeroRate(t);
+            double df = curve.GetDiscountFactor(t);
+            WriteLine($"{t,-10:F4} {rate * 100,-15:F6} {df,-15:F8}");
+        }
     }
 
     /// <summary>
