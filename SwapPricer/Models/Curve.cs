@@ -60,7 +60,7 @@ public class Curve
 
     /// <summary>
     /// Gets the discount factor at a given time.
-    /// DF(t) = exp(-r(t) * t)
+    /// DF(t) = 1 / (1 + r(t) * t)  [simple rate convention]
     /// </summary>
     public double GetDiscountFactor(double timeInYears)
     {
@@ -68,7 +68,7 @@ public class Curve
             return 1.0;
 
         double zeroRate = GetZeroRate(timeInYears);
-        return Math.Exp(-zeroRate * timeInYears);
+        return 1.0 / (1.0 + zeroRate * timeInYears);
     }
 
     /// <summary>

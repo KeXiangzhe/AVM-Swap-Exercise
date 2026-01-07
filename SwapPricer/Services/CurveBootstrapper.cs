@@ -29,13 +29,8 @@ public class CurveBootstrapper
         {
             if (quote.IsFixing)
             {
-                // 6M fixing: convert simple rate to continuous zero rate
-                // Simple rate: 1 + r * t = DF^(-1)
-                // DF = 1 / (1 + r * t)
-                // Continuous: DF = exp(-z * t), so z = -ln(DF) / t
-                double df = 1.0 / (1.0 + quote.Rate * quote.TenorYears);
-                double zeroRate = -Math.Log(df) / quote.TenorYears;
-                curve.AddPoint(quote.TenorYears, zeroRate);
+                // 6M fixing: use directly as simple rate
+                curve.AddPoint(quote.TenorYears, quote.Rate);
             }
             else
             {
@@ -86,7 +81,9 @@ public class CurveBootstrapper
         // Par swap equation: 1 - DF_n = parRate * (annuity + DF_n * tau_last)
         // DF_n = (1 - parRate * annuity) / (1 + parRate * tau_last)
         double dfn = (1.0 - parRate * annuity) / (1.0 + parRate * tauLast);
-        double zeroRate = -Math.Log(dfn) / tenorYears;
+
+        // Convert DF to simple zero rate: DF = 1/(1 + r*t), so r = (1/DF - 1) / t
+        double zeroRate = (1.0 / dfn - 1.0) / tenorYears;
 
         return zeroRate;
     }
