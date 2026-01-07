@@ -39,13 +39,12 @@ public class RiskCalculator
     }
 
     /// <summary>
-    /// Calculates Gamma (rate of change of DV01 with respect to rates).
-    /// Uses finite difference: Gamma = (PV(+1bp) - 2*PV(0) + PV(-1bp)) / (1bp)^2
+    /// Calculates Gamma (change in DV01 for a 1bp parallel shift).
+    /// Gamma = PV(+1bp) - 2*PV(0) + PV(-1bp)
     /// </summary>
     public double CalculateGamma(Swap swap, Curve forwardCurve, Curve discountCurve, DateTime valuationDate)
     {
         const double bumpBps = 1.0;
-        const double bumpDecimal = bumpBps / 10000.0;
 
         // Base PV
         double pvBase = _pricerService.CalculateSwapPV(swap, forwardCurve, discountCurve, valuationDate);
@@ -60,8 +59,8 @@ public class RiskCalculator
         var discountDown = discountCurve.ShiftParallel(-bumpBps);
         double pvDown = _pricerService.CalculateSwapPV(swap, forwardDown, discountDown, valuationDate);
 
-        // Second derivative using central difference
-        double gamma = (pvUp - 2 * pvBase + pvDown) / (bumpDecimal * bumpDecimal);
+        // Gamma = change in DV01 per 1bp shift
+        double gamma = pvUp - 2 * pvBase + pvDown;
 
         return gamma;
     }
