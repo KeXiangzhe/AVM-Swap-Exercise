@@ -6,30 +6,33 @@ namespace SwapPricer.Utils;
 public static class DateUtils
 {
     /// <summary>
-    /// Calculates the year fraction between two dates using Actual/Actual convention.
+    /// Calculates the year fraction between two dates using Actual/Actual (ISDA) convention.
+    /// Each year contributes: (days in that year) / (365 or 366 for leap year)
     /// </summary>
     public static double YearFraction(DateTime startDate, DateTime endDate)
     {
         if (startDate >= endDate)
             return 0.0;
 
-        double totalYearFraction = 0.0;
+        double fraction = 0.0;
         DateTime current = startDate;
 
-        while (current < endDate)
+        while (current.Year < endDate.Year)
         {
-            int year = current.Year;
-            DateTime yearEnd = new DateTime(year + 1, 1, 1);
-            DateTime periodEnd = endDate < yearEnd ? endDate : yearEnd;
-
-            int daysInYear = DateTime.IsLeapYear(year) ? 366 : 365;
-            int daysInPeriod = (periodEnd - current).Days;
-
-            totalYearFraction += (double)daysInPeriod / daysInYear;
-            current = periodEnd;
+            // Days remaining in this year
+            DateTime yearEnd = new DateTime(current.Year + 1, 1, 1);
+            int daysInYear = DateTime.IsLeapYear(current.Year) ? 366 : 365;
+            int daysRemaining = (yearEnd - current).Days;
+            fraction += (double)daysRemaining / daysInYear;
+            current = yearEnd;
         }
 
-        return totalYearFraction;
+        // Days in the final year
+        int finalYearDays = DateTime.IsLeapYear(endDate.Year) ? 366 : 365;
+        int daysInFinalPeriod = (endDate - current).Days;
+        fraction += (double)daysInFinalPeriod / finalYearDays;
+
+        return fraction;
     }
 
     /// <summary>

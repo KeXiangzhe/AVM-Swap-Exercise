@@ -75,7 +75,7 @@ class Program
             DateTime swapEndDate = referenceDate.AddYears(SwapTenorYears);
             var swap = new Swap(referenceDate, swapEndDate, Notional);
 
-            double parRate = pricerService.CalculateParRate(swap, iborCurve, discountCurve, referenceDate);
+            double parRate = pricerService.CalculateParRate(swap, iborCurve, referenceDate);
             swap.FixedRate = parRate;
 
             WriteLine($"\nSwap Details:");
@@ -92,7 +92,7 @@ class Program
             WriteLine($"  Gamma: {riskMetrics.Gamma:F2}");
 
             // Verify par swap has zero PV
-            double parSwapPV = pricerService.CalculateSwapPV(swap, iborCurve, discountCurve, referenceDate);
+            double parSwapPV = pricerService.CalculateSwapPV(swap, iborCurve, referenceDate);
             WriteLine($"\n  Verification - Par Swap PV: {parSwapPV:F2} (should be ~0)");
 
             // Question 3: 3 Months Later - Accrual and Clean PV
@@ -106,12 +106,11 @@ class Program
 
             // Shift curve reference date but keep same rates
             var iborCurve3M = ShiftCurveReferenceDate(iborCurve, valuationDate3M);
-            var discountCurve3M = ShiftCurveReferenceDate(discountCurve, valuationDate3M);
 
             var (cleanPV, fixedAccrual, floatAccrual) = pricerService.CalculateCleanPV(
-                swap, iborCurve3M, discountCurve3M, valuationDate3M);
+                swap, iborCurve3M, valuationDate3M);
 
-            double dirtyPV = pricerService.CalculateSwapPV(swap, iborCurve3M, discountCurve3M, valuationDate3M);
+            double dirtyPV = pricerService.CalculateSwapPV(swap, iborCurve3M, valuationDate3M);
 
             WriteLine($"\nResults:");
             WriteLine($"  Fixed Leg Accrual: {fixedAccrual:F2}");
@@ -129,14 +128,14 @@ class Program
             WriteLine("  f(0) = f(6M)");
             WriteLine("  f''(0) = f''(10Y) = 0");
 
-            // Create cubic spline interpolated curve (shifted to 3M forward)
-            var iborCurve3MSpline = ShiftCurveReferenceDate(iborCurve, valuationDate3M, useSpline: true);
+            // Build spline on ORIGINAL curve knots, then use for queries at shifted times
+            // "Curve unchanged" means spline shape stays the same
+            var iborCurve3MSpline = CreateSplineCurveForForwardDate(iborCurve, valuationDate3M);
 
-            // Use same discount curve from Q1 (shifted to new reference date)
             var (cleanPVSpline, fixedAccrualSpline, floatAccrualSpline) = pricerService.CalculateCleanPV(
-                swap, iborCurve3MSpline, discountCurve3M, valuationDate3M);
+                swap, iborCurve3MSpline, valuationDate3M);
 
-            double dirtyPVSpline = pricerService.CalculateSwapPV(swap, iborCurve3MSpline, discountCurve3M, valuationDate3M);
+            double dirtyPVSpline = pricerService.CalculateSwapPV(swap, iborCurve3MSpline, valuationDate3M);
 
             WriteLine($"\nResults (with Cubic Spline for IBOR curve):");
             WriteLine($"  Fixed Leg Accrual: {fixedAccrualSpline:F2}");
@@ -216,6 +215,47 @@ class Program
                 addZeroPoint: true);
             newCurve.SetInterpolator(spline);
         }
+
+        return newCurve;
+    }
+
+    /// <summary>
+    /// Creates a curve for forward valuation using cubic spline on ORIGINAL knots.
+    /// This matches the standard approach: build spline once, query at any time.
+    /// "Curve unchanged" means the spline shape stays the same.
+    /// Query at time-to-payment (not original scheduled time).
+    /// </summary>
+    private static Curve CreateSplineCurveForForwardDate(Curve originalCurve, DateTime newReferenceDate)
+    {
+        // Build spline on original curve knots (including t=0 point)
+        var times = new List<double> { 0.0 };
+        var rates = new List<double> { originalCurve.ZeroRates[0] }; // f(0) = f(6M)
+        times.AddRange(originalCurve.Times);
+        rates.AddRange(originalCurve.ZeroRates);
+
+        var spline = new CubicSplineInterpolator(times.ToArray(), rates.ToArray(), addZeroPoint: false);
+
+        // Create a new curve with the new reference date
+        var newCurve = new Curve(newReferenceDate);
+
+        // Add some reference points for the curve's internal storage
+        // These are just for display; the spline handles all interpolation
+        double timeShift = DateUtils.YearFraction(originalCurve.ReferenceDate, newReferenceDate);
+        for (int i = 0; i < originalCurve.Times.Count; i++)
+        {
+            double newTime = originalCurve.Times[i] - timeShift;
+            if (newTime > 0)
+            {
+                // Query the spline at the NEW time (time-to-payment)
+                // NOT at the original time
+                double rate = spline.Interpolate(newTime);
+                newCurve.AddPoint(newTime, rate);
+            }
+        }
+
+        // Use the original spline directly - no time shift needed
+        // When querying at 0.75, we want the rate for money 0.75 years away
+        newCurve.SetInterpolator(spline);
 
         return newCurve;
     }

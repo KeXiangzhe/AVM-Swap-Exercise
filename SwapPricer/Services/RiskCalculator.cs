@@ -29,9 +29,9 @@ public class RiskCalculator
     {
         const double bumpBps = 0.0001; // 1bp = 0.01% = 0.0001
 
-        // Base curves and PV
-        var (iborBase, discBase) = _bootstrapper.BootstrapCurves(referenceDate, marketQuotes);
-        double pvBase = _pricerService.CalculateSwapPV(swap, iborBase, discBase, referenceDate);
+        // Base curves and PV (only IBOR curve needed; discount is derived from IBOR + spread)
+        var (iborBase, _) = _bootstrapper.BootstrapCurves(referenceDate, marketQuotes);
+        double pvBase = _pricerService.CalculateSwapPV(swap, iborBase, referenceDate);
 
         // Shocked quotes: bump par swap rates by +1bp, keep fixing unchanged
         var shockedQuotes = marketQuotes.Select(q =>
@@ -41,8 +41,8 @@ public class RiskCalculator
         ).ToList();
 
         // Re-bootstrap with shocked quotes
-        var (iborShocked, discShocked) = _bootstrapper.BootstrapCurves(referenceDate, shockedQuotes);
-        double pvShocked = _pricerService.CalculateSwapPV(swap, iborShocked, discShocked, referenceDate);
+        var (iborShocked, _) = _bootstrapper.BootstrapCurves(referenceDate, shockedQuotes);
+        double pvShocked = _pricerService.CalculateSwapPV(swap, iborShocked, referenceDate);
 
         // DV01 = change in PV for +1bp shock
         double dv01 = pvShocked - pvBase;
@@ -59,8 +59,8 @@ public class RiskCalculator
         const double bumpBps = 0.0001; // 1bp
 
         // Base curves and PV
-        var (iborBase, discBase) = _bootstrapper.BootstrapCurves(referenceDate, marketQuotes);
-        double pvBase = _pricerService.CalculateSwapPV(swap, iborBase, discBase, referenceDate);
+        var (iborBase, _) = _bootstrapper.BootstrapCurves(referenceDate, marketQuotes);
+        double pvBase = _pricerService.CalculateSwapPV(swap, iborBase, referenceDate);
 
         // Shocked up quotes
         var shockedUpQuotes = marketQuotes.Select(q =>
@@ -68,8 +68,8 @@ public class RiskCalculator
                 ? q
                 : new MarketQuote(q.TenorYears, q.Rate + bumpBps, q.IsFixing)
         ).ToList();
-        var (iborUp, discUp) = _bootstrapper.BootstrapCurves(referenceDate, shockedUpQuotes);
-        double pvUp = _pricerService.CalculateSwapPV(swap, iborUp, discUp, referenceDate);
+        var (iborUp, _) = _bootstrapper.BootstrapCurves(referenceDate, shockedUpQuotes);
+        double pvUp = _pricerService.CalculateSwapPV(swap, iborUp, referenceDate);
 
         // Shocked down quotes
         var shockedDownQuotes = marketQuotes.Select(q =>
@@ -77,8 +77,8 @@ public class RiskCalculator
                 ? q
                 : new MarketQuote(q.TenorYears, q.Rate - bumpBps, q.IsFixing)
         ).ToList();
-        var (iborDown, discDown) = _bootstrapper.BootstrapCurves(referenceDate, shockedDownQuotes);
-        double pvDown = _pricerService.CalculateSwapPV(swap, iborDown, discDown, referenceDate);
+        var (iborDown, _) = _bootstrapper.BootstrapCurves(referenceDate, shockedDownQuotes);
+        double pvDown = _pricerService.CalculateSwapPV(swap, iborDown, referenceDate);
 
         // Gamma = convexity measure
         double gamma = pvUp - 2 * pvBase + pvDown;

@@ -8,10 +8,46 @@ namespace SwapPricer.Services;
 /// </summary>
 public class SwapPricerService
 {
+    // Discount spread: -38 bps (added to IBOR rate to get Discount rate)
+    private const double DiscountSpread = -0.0038;
+
+    /// <summary>
+    /// Gets the discount DF by deriving from the IBOR curve.
+    /// Discount_rate = IBOR_rate + spread
+    /// Discount_DF = exp(-Discount_rate × t)
+    /// </summary>
+    private double GetDiscountDFFromIborCurve(Curve iborCurve, double t)
+    {
+        double iborRate = iborCurve.GetZeroRate(t);
+        double discRate = iborRate + DiscountSpread;
+        return Math.Exp(-discRate * t);
+    }
+
+    /// <summary>
+    /// Gets the IBOR DF from the IBOR curve.
+    /// IBOR_DF = exp(-IBOR_rate × t)
+    /// </summary>
+    private double GetIborDF(Curve iborCurve, double t)
+    {
+        double iborRate = iborCurve.GetZeroRate(t);
+        return Math.Exp(-iborRate * t);
+    }
+
+    /// <summary>
+    /// Calculates forward rate from IBOR DFs.
+    /// </summary>
+    private double GetForwardRateFromIborCurve(Curve iborCurve, double tStart, double tEnd)
+    {
+        double iborDfStart = GetIborDF(iborCurve, tStart);
+        double iborDfEnd = GetIborDF(iborCurve, tEnd);
+        double tau = tEnd - tStart;
+        return (iborDfStart / iborDfEnd - 1.0) / tau;
+    }
+
     /// <summary>
     /// Calculates the present value of the fixed leg.
     /// </summary>
-    public double CalculateFixedLegPV(Swap swap, Curve discountCurve, DateTime valuationDate)
+    public double CalculateFixedLegPV(Swap swap, Curve iborCurve, DateTime valuationDate)
     {
         double pv = 0.0;
         var cashFlows = swap.GetFixedLegCashFlows();
@@ -21,8 +57,8 @@ public class SwapPricerService
             if (cf.PaymentDate <= valuationDate)
                 continue; // Already paid
 
-            double t = DateUtils.YearFraction(discountCurve.ReferenceDate, cf.PaymentDate);
-            double df = discountCurve.GetDiscountFactor(t);
+            double t = DateUtils.YearFraction(iborCurve.ReferenceDate, cf.PaymentDate);
+            double df = GetDiscountDFFromIborCurve(iborCurve, t);
             pv += cf.Amount * df;
         }
 
@@ -31,8 +67,9 @@ public class SwapPricerService
 
     /// <summary>
     /// Calculates the present value of the floating leg.
+    /// Uses IBOR curve for forward rates, derives discount DFs from IBOR + spread.
     /// </summary>
-    public double CalculateFloatLegPV(Swap swap, Curve forwardCurve, Curve discountCurve, DateTime valuationDate)
+    public double CalculateFloatLegPV(Swap swap, Curve iborCurve, DateTime valuationDate)
     {
         double pv = 0.0;
         var periods = swap.GetFloatLegPeriods();
@@ -42,30 +79,36 @@ public class SwapPricerService
             if (period.PaymentDate <= valuationDate)
                 continue; // Already paid
 
-            double tStart = DateUtils.YearFraction(forwardCurve.ReferenceDate, period.AccrualStart);
-            double tEnd = DateUtils.YearFraction(forwardCurve.ReferenceDate, period.AccrualEnd);
-            double tPay = DateUtils.YearFraction(discountCurve.ReferenceDate, period.PaymentDate);
+            double tPay = DateUtils.YearFraction(iborCurve.ReferenceDate, period.PaymentDate);
 
             // Forward rate for the period
             double forwardRate;
-            if (period.AccrualStart <= valuationDate)
-            {
-                // Period has started, rate is fixed at period start
-                // For simplicity, use the forward rate as of curve reference date
-                tStart = Math.Max(tStart, 0.0001); // Avoid division by zero
-            }
 
-            if (tStart < 0.0001)
+            // Check if this is the first period (0-6M) which uses the market fixing
+            double originalTEnd = DateUtils.YearFraction(swap.StartDate, period.AccrualEnd);
+            if (originalTEnd <= 0.5 + 0.001) // First 6M period
             {
-                // First period starting now, use the short rate
-                forwardRate = forwardCurve.GetZeroRate(tEnd);
+                // Use the 6M fixing rate from market data
+                forwardRate = 0.0411;
             }
             else
             {
-                forwardRate = forwardCurve.GetForwardRate(tStart, tEnd);
+                // Calculate forward rate from IBOR curve
+                double tStart = DateUtils.YearFraction(iborCurve.ReferenceDate, period.AccrualStart);
+                double tEnd = DateUtils.YearFraction(iborCurve.ReferenceDate, period.AccrualEnd);
+
+                if (tStart < 0.0001)
+                {
+                    forwardRate = GetForwardRateFromIborCurve(iborCurve, 0.0001, tEnd);
+                }
+                else
+                {
+                    forwardRate = GetForwardRateFromIborCurve(iborCurve, tStart, tEnd);
+                }
             }
 
-            double df = discountCurve.GetDiscountFactor(tPay);
+            // Discount using DF derived from IBOR curve + spread
+            double df = GetDiscountDFFromIborCurve(iborCurve, tPay);
             double amount = swap.Notional * forwardRate * period.DayFraction;
             pv += amount * df;
         }
@@ -77,10 +120,10 @@ public class SwapPricerService
     /// Calculates the swap NPV (Float - Fixed for receiver swap, Fixed - Float for payer).
     /// Convention: Positive NPV means receiving fixed is profitable.
     /// </summary>
-    public double CalculateSwapPV(Swap swap, Curve forwardCurve, Curve discountCurve, DateTime valuationDate)
+    public double CalculateSwapPV(Swap swap, Curve iborCurve, DateTime valuationDate)
     {
-        double fixedPV = CalculateFixedLegPV(swap, discountCurve, valuationDate);
-        double floatPV = CalculateFloatLegPV(swap, forwardCurve, discountCurve, valuationDate);
+        double fixedPV = CalculateFixedLegPV(swap, iborCurve, valuationDate);
+        double floatPV = CalculateFloatLegPV(swap, iborCurve, valuationDate);
 
         // Receiver swap (receive fixed, pay float): PV = Fixed - Float
         return fixedPV - floatPV;
@@ -89,11 +132,11 @@ public class SwapPricerService
     /// <summary>
     /// Calculates the par swap rate (rate that makes NPV = 0).
     /// </summary>
-    public double CalculateParRate(Swap swap, Curve forwardCurve, Curve discountCurve, DateTime valuationDate)
+    public double CalculateParRate(Swap swap, Curve iborCurve, DateTime valuationDate)
     {
         // Par rate = Float PV / Fixed Annuity
-        double floatPV = CalculateFloatLegPV(swap, forwardCurve, discountCurve, valuationDate);
-        double annuity = CalculateFixedAnnuity(swap, discountCurve, valuationDate);
+        double floatPV = CalculateFloatLegPV(swap, iborCurve, valuationDate);
+        double annuity = CalculateFixedAnnuity(swap, iborCurve, valuationDate);
 
         return floatPV / (swap.Notional * annuity);
     }
@@ -101,7 +144,7 @@ public class SwapPricerService
     /// <summary>
     /// Calculates the fixed leg annuity (sum of DF * day_fraction).
     /// </summary>
-    public double CalculateFixedAnnuity(Swap swap, Curve discountCurve, DateTime valuationDate)
+    public double CalculateFixedAnnuity(Swap swap, Curve iborCurve, DateTime valuationDate)
     {
         double annuity = 0.0;
         var payDates = DateUtils.GeneratePaymentDates(swap.StartDate, swap.EndDate, swap.FixedFrequencyMonths);
@@ -115,9 +158,9 @@ public class SwapPricerService
                 continue;
             }
 
-            double t = DateUtils.YearFraction(discountCurve.ReferenceDate, payDate);
+            double t = DateUtils.YearFraction(iborCurve.ReferenceDate, payDate);
             double tau = DateUtils.YearFraction(prevDate, payDate);
-            double df = discountCurve.GetDiscountFactor(t);
+            double df = GetDiscountDFFromIborCurve(iborCurve, t);
 
             annuity += df * tau;
             prevDate = payDate;
@@ -152,7 +195,7 @@ public class SwapPricerService
     /// <summary>
     /// Calculates accrued interest on the floating leg as of valuation date.
     /// </summary>
-    public double CalculateFloatAccrual(Swap swap, Curve forwardCurve, DateTime valuationDate)
+    public double CalculateFloatAccrual(Swap swap, Curve iborCurve, DateTime valuationDate)
     {
         var periods = swap.GetFloatLegPeriods();
 
@@ -160,15 +203,22 @@ public class SwapPricerService
         {
             if (period.AccrualStart <= valuationDate && valuationDate < period.AccrualEnd)
             {
-                // We're in this accrual period
-                double tStart = DateUtils.YearFraction(forwardCurve.ReferenceDate, period.AccrualStart);
-                double tEnd = DateUtils.YearFraction(forwardCurve.ReferenceDate, period.AccrualEnd);
+                // We're in this accrual period - use the fixing rate
+                double originalTEnd = DateUtils.YearFraction(swap.StartDate, period.AccrualEnd);
 
                 double forwardRate;
-                if (tStart < 0.0001)
-                    forwardRate = forwardCurve.GetZeroRate(tEnd);
+                if (originalTEnd <= 0.5 + 0.001) // First 6M period
+                {
+                    // Use the 6M fixing rate
+                    forwardRate = 0.0411;
+                }
                 else
-                    forwardRate = forwardCurve.GetForwardRate(tStart, tEnd);
+                {
+                    // Calculate forward rate from IBOR curve
+                    double tStart = DateUtils.YearFraction(iborCurve.ReferenceDate, period.AccrualStart);
+                    double tEnd = DateUtils.YearFraction(iborCurve.ReferenceDate, period.AccrualEnd);
+                    forwardRate = GetForwardRateFromIborCurve(iborCurve, Math.Max(tStart, 0.0001), tEnd);
+                }
 
                 double accrualDays = DateUtils.YearFraction(period.AccrualStart, valuationDate);
                 double fullAmount = swap.Notional * forwardRate * period.DayFraction;
@@ -185,11 +235,11 @@ public class SwapPricerService
     /// Calculates the clean PV (dirty PV minus accrued interest).
     /// </summary>
     public (double CleanPV, double FixedAccrual, double FloatAccrual) CalculateCleanPV(
-        Swap swap, Curve forwardCurve, Curve discountCurve, DateTime valuationDate)
+        Swap swap, Curve iborCurve, DateTime valuationDate)
     {
-        double dirtyPV = CalculateSwapPV(swap, forwardCurve, discountCurve, valuationDate);
+        double dirtyPV = CalculateSwapPV(swap, iborCurve, valuationDate);
         double fixedAccrual = CalculateFixedAccrual(swap, valuationDate);
-        double floatAccrual = CalculateFloatAccrual(swap, forwardCurve, valuationDate);
+        double floatAccrual = CalculateFloatAccrual(swap, iborCurve, valuationDate);
 
         // Clean PV for receiver: remove accrued fixed (we'll receive it) and add accrued float (we'll pay it)
         double cleanPV = dirtyPV - fixedAccrual + floatAccrual;

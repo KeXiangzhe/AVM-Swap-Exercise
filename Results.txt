@@ -49,8 +49,8 @@ Swap Details:
   Notional: 1,000,000
 
 Results:
-  Par Swap Rate: 3.091520%
-  DV01: -784.37
+  Par Swap Rate: 3.088905%
+  DV01: -784.28
   Gamma: 0.73
 
   Verification - Par Swap PV: -0.00 (should be ~0)
@@ -63,11 +63,11 @@ Valuation Date: 2026-04-07
 (Assuming curve unchanged)
 
 Results:
-  Fixed Leg Accrual: 7622.92
+  Fixed Leg Accrual: 7616.48
   Float Leg Accrual: 10134.25
-  Net Accrual (Fixed - Float): -2511.32
-  Dirty PV: -2428.02
-  Clean PV: 83.30
+  Net Accrual (Fixed - Float): -2517.77
+  Dirty PV: -2530.99
+  Clean PV: -13.23
 
 ======================================================================
 QUESTION 4: Cubic Spline Interpolation
@@ -78,18 +78,18 @@ Boundary conditions:
   f''(0) = f''(10Y) = 0
 
 Results (with Cubic Spline for IBOR curve):
-  Fixed Leg Accrual: 7622.92
-  Float Leg Accrual: 10134.20
-  Net Accrual (Fixed - Float): -2511.27
-  Dirty PV: -1980.23
-  Clean PV: 531.05
+  Fixed Leg Accrual: 7616.48
+  Float Leg Accrual: 10134.25
+  Net Accrual (Fixed - Float): -2517.77
+  Dirty PV: -2359.92
+  Clean PV: 157.85
 
 ======================================================================
 Comparison: Linear vs Cubic Spline
 ======================================================================
-  Clean PV (Linear):       83.30
-  Clean PV (Cubic Spline): 531.05
-  Difference:              447.75
+  Clean PV (Linear):       -13.23
+  Clean PV (Cubic Spline): 157.85
+  Difference:              171.07
 
 ======================================================================
 Exercise Complete
