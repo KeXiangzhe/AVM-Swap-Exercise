@@ -4,23 +4,29 @@ using SwapPricer.Utils;
 namespace SwapPricer.Services;
 
 /// <summary>
-/// Bootstraps zero rate curves from market par swap rates.
+/// Bootstraps zero rate curves from market par swap rates using dual-curve methodology.
 /// </summary>
 public class CurveBootstrapper
 {
+    private const double DiscountSpreadBps = -38.0;
+    private const double Tolerance = 1e-10;
+    private const int MaxIterations = 100;
+
     /// <summary>
     /// Market data point with tenor and rate.
     /// </summary>
     public record MarketQuote(double TenorYears, double Rate, bool IsFixing);
 
     /// <summary>
-    /// Bootstraps the IBOR zero curve from market quotes.
-    /// - 6M fixing is used directly
-    /// - Par swap rates are bootstrapped iteratively
+    /// Bootstraps both IBOR and Discount curves simultaneously using dual-curve methodology.
+    /// - Forward rates projected from IBOR curve
+    /// - Cash flows discounted using Discount curve (IBOR - 38bps)
     /// </summary>
-    public Curve BootstrapIborCurve(DateTime referenceDate, List<MarketQuote> quotes)
+    public (Curve IborCurve, Curve DiscountCurve) BootstrapCurves(DateTime referenceDate, List<MarketQuote> quotes)
     {
-        var curve = new Curve(referenceDate);
+        var iborCurve = new Curve(referenceDate);
+        var discountCurve = new Curve(referenceDate);
+        double spread = DiscountSpreadBps / 10000.0;
 
         // Sort quotes by tenor
         var sortedQuotes = quotes.OrderBy(q => q.TenorYears).ToList();
@@ -30,66 +36,169 @@ public class CurveBootstrapper
             if (quote.IsFixing)
             {
                 // 6M fixing: use directly as simple rate
-                curve.AddPoint(quote.TenorYears, quote.Rate);
+                iborCurve.AddPoint(quote.TenorYears, quote.Rate);
+                discountCurve.AddPoint(quote.TenorYears, quote.Rate + spread);
             }
             else
             {
-                // Par swap rate: bootstrap the zero rate
-                double zeroRate = BootstrapSwapRate(curve, referenceDate, quote.TenorYears, quote.Rate);
-                curve.AddPoint(quote.TenorYears, zeroRate);
+                // Par swap rate: bootstrap using dual-curve methodology
+                double iborZeroRate = BootstrapDualCurve(
+                    iborCurve, discountCurve, referenceDate,
+                    quote.TenorYears, quote.Rate, spread);
+
+                iborCurve.AddPoint(quote.TenorYears, iborZeroRate);
+                discountCurve.AddPoint(quote.TenorYears, iborZeroRate + spread);
             }
         }
 
-        return curve;
+        return (iborCurve, discountCurve);
     }
 
     /// <summary>
-    /// Bootstraps a single zero rate from a par swap rate.
-    /// Uses the relationship: 1 - DF_n = S * Annuity
-    /// where Annuity = sum of DF_i * day_fraction_i for fixed leg payment dates
+    /// Bootstraps a single IBOR zero rate using dual-curve methodology.
+    /// Uses Newton-Raphson to find the rate that makes swap NPV = 0.
     /// </summary>
-    private double BootstrapSwapRate(Curve curve, DateTime referenceDate, double tenorYears, double parRate)
+    private double BootstrapDualCurve(Curve iborCurve, Curve discountCurve,
+        DateTime referenceDate, double tenorYears, double parRate, double spread)
     {
-        // Generate fixed leg payment dates (annual)
+        // Generate payment schedules
         int tenorMonths = (int)(tenorYears * 12);
         DateTime endDate = referenceDate.AddMonths(tenorMonths);
-        var fixedPayDates = DateUtils.GeneratePaymentDates(referenceDate, endDate, 12);
+        var fixedPayDates = DateUtils.GeneratePaymentDates(referenceDate, endDate, 12);  // Annual
+        var floatPayDates = DateUtils.GeneratePaymentDates(referenceDate, endDate, 6);   // Semi-annual
 
-        // Calculate annuity (sum of DF * day_fraction for known discount factors)
-        double annuity = 0.0;
+        // Initial guess: use par rate as starting point
+        double iborRate = parRate;
+
+        // Newton-Raphson iteration
+        for (int iter = 0; iter < MaxIterations; iter++)
+        {
+            double discRate = iborRate + spread;
+
+            // Calculate swap NPV with current guess
+            double floatPV = CalculateFloatLegPV(iborCurve, discountCurve, referenceDate,
+                floatPayDates, iborRate, discRate, tenorYears);
+            double fixedPV = CalculateFixedLegPV(discountCurve, referenceDate,
+                fixedPayDates, parRate, discRate, tenorYears);
+
+            double npv = floatPV - fixedPV;
+
+            if (Math.Abs(npv) < Tolerance)
+            {
+                Console.WriteLine($"  Bootstrap {tenorYears}Y: iborRate={iborRate*100:F4}%, discRate={discRate*100:F4}%, iterations={iter+1}");
+                return iborRate;
+            }
+
+            // Numerical derivative for Newton-Raphson
+            double bump = 0.0001;
+            double floatPVUp = CalculateFloatLegPV(iborCurve, discountCurve, referenceDate,
+                floatPayDates, iborRate + bump, discRate + bump, tenorYears);
+            double fixedPVUp = CalculateFixedLegPV(discountCurve, referenceDate,
+                fixedPayDates, parRate, discRate + bump, tenorYears);
+            double npvUp = floatPVUp - fixedPVUp;
+
+            double derivative = (npvUp - npv) / bump;
+            if (Math.Abs(derivative) < 1e-15)
+                break;
+
+            iborRate = iborRate - npv / derivative;
+        }
+
+        Console.WriteLine($"  Bootstrap {tenorYears}Y: iborRate={iborRate*100:F4}% (max iterations reached)");
+        return iborRate;
+    }
+
+    /// <summary>
+    /// Calculates floating leg PV using forward rates from IBOR curve, discounted with discount curve.
+    /// </summary>
+    private double CalculateFloatLegPV(Curve iborCurve, Curve discountCurve,
+        DateTime referenceDate, List<DateTime> payDates,
+        double newIborRate, double newDiscRate, double newTenor)
+    {
+        double pv = 0.0;
         DateTime prevDate = referenceDate;
 
-        foreach (var payDate in fixedPayDates)
+        foreach (var payDate in payDates)
+        {
+            double tStart = DateUtils.YearFraction(referenceDate, prevDate);
+            double tEnd = DateUtils.YearFraction(referenceDate, payDate);
+            double tau = DateUtils.YearFraction(prevDate, payDate);
+
+            // Get forward rate from IBOR curve
+            double forwardRate;
+            if (tStart < 0.001)
+            {
+                // First period: forward rate = zero rate at period end
+                forwardRate = tEnd >= newTenor - 0.001
+                    ? newIborRate
+                    : iborCurve.GetZeroRate(tEnd);
+            }
+            else
+            {
+                // Forward rate from zero rates
+                double dfStart = GetDiscountFactor(iborCurve, tStart, newIborRate, newTenor);
+                double dfEnd = GetDiscountFactor(iborCurve, tEnd, newIborRate, newTenor);
+                forwardRate = (dfStart / dfEnd - 1.0) / tau;
+            }
+
+            // Discount using discount curve
+            double dfDisc = GetDiscountFactor(discountCurve, tEnd, newDiscRate, newTenor);
+            pv += forwardRate * tau * dfDisc;
+
+            prevDate = payDate;
+        }
+
+        return pv;
+    }
+
+    /// <summary>
+    /// Calculates fixed leg PV discounted with discount curve.
+    /// </summary>
+    private double CalculateFixedLegPV(Curve discountCurve, DateTime referenceDate,
+        List<DateTime> payDates, double fixedRate, double newDiscRate, double newTenor)
+    {
+        double pv = 0.0;
+        DateTime prevDate = referenceDate;
+
+        foreach (var payDate in payDates)
         {
             double t = DateUtils.YearFraction(referenceDate, payDate);
             double tau = DateUtils.YearFraction(prevDate, payDate);
 
-            // Only include payments before the final maturity
-            if (payDate < endDate)
-            {
-                double df = curve.GetDiscountFactor(t);
-                annuity += df * tau;
-            }
+            double df = GetDiscountFactor(discountCurve, t, newDiscRate, newTenor);
+            pv += fixedRate * tau * df;
+
             prevDate = payDate;
         }
 
-        // Calculate tau for the final period
-        double tauLast = DateUtils.YearFraction(fixedPayDates.Count > 1 ? fixedPayDates[^2] : referenceDate, endDate);
-        if (fixedPayDates.Count == 1)
-            tauLast = DateUtils.YearFraction(referenceDate, endDate);
-
-        // Par swap equation: 1 - DF_n = parRate * (annuity + DF_n * tau_last)
-        // DF_n = (1 - parRate * annuity) / (1 + parRate * tau_last)
-        double dfn = (1.0 - parRate * annuity) / (1.0 + parRate * tauLast);
-
-        // Convert DF to simple zero rate: DF = 1/(1 + r*t), so r = (1/DF - 1) / t
-        double zeroRate = (1.0 / dfn - 1.0) / tenorYears;
-
-        return zeroRate;
+        return pv;
     }
 
     /// <summary>
-    /// Creates the discount curve by applying a spread to the IBOR curve.
+    /// Gets discount factor, using the new rate if at or beyond the new tenor point.
+    /// </summary>
+    private double GetDiscountFactor(Curve curve, double t, double newRate, double newTenor)
+    {
+        if (t < 0.001)
+            return 1.0;
+
+        double rate;
+        if (t >= newTenor - 0.001)
+        {
+            // Use the new rate being bootstrapped
+            rate = newRate;
+        }
+        else
+        {
+            // Use existing curve
+            rate = curve.GetZeroRate(t);
+        }
+
+        return 1.0 / (1.0 + rate * t);
+    }
+
+    /// <summary>
+    /// Legacy method for compatibility - creates discount curve from IBOR curve.
     /// </summary>
     public Curve CreateDiscountCurve(Curve iborCurve, double spreadBps)
     {

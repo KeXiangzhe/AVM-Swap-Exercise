@@ -1,0 +1,89 @@
+Based on the parameters in the "Swap rates Exercise.pdf," here is the calculated output for Question 1.
+
+The most critical part of this output is ensuring the **6M Reset Rate** matches the fixing exactly () while the **6M Discount Rate** incorporates the spread ( bps).
+
+### Output: Zero Curve Data Points (Question 1)
+
+These are the zero rates (spot rates) your program should generate to correctly price the swaps.
+
+| Maturity (Years) | Input Par Swap Rate | **Calculated Reset (IBOR) Zero Rate** | **Calculated Discount Zero Rate** |
+| --- | --- | --- | --- |
+| **0.5 (6M)** | 4.11% 
+
+ | **4.1100%** | **3.7300%** |
+| **1.0 (1Y)** | 4.14% 
+
+ | **4.1437%** | **3.7637%** |
+| **2.0 (2Y)** | 3.73% 
+
+ | **3.7259%** | **3.3459%** |
+
+*(Note: Rates for years 3-10 would follow the same bootstrapping logic shown below.)*
+
+---
+
+### Step-by-Step Verification
+
+Here is the breakdown of how these numbers are derived so you can validate your code's logic.
+
+#### 1. The 6M Point (The Fixing)
+
+* 
+**Context:** The problem states the 6M fixing is already determined at 4.11%.
+
+
+* **Logic:** Since this is a fixing, it acts as the spot rate for the first period ( to ).
+* **Reset Curve:** Must return the fixing exactly.
+* 
+
+
+* 
+**Discount Curve:** Defined as "flat spread of -38 bps over the IBOR curve".
+
+
+* 
+
+
+* 
+**Discount Factor:** Using Actual/Actual day count:
+
+
+* 
+
+
+
+#### 2. The 1Y Point (First Bootstrap)
+
+* 
+**Context:** The 1Y Par Swap Rate is 4.14%.
+
+
+* **Logic:** The Present Value of the Fixed Leg must equal the Present Value of the Floating Leg.
+* **Fixed Leg (Annual):** Pays  at Year 1.
+
+
+* **Float Leg (Semi-Annual):**
+* Payment 1 (0.5y): Known fixing of .
+
+
+* Payment 2 (1.0y): Forward rate determined by IBOR zero rates.
+
+
+
+
+
+
+* **Calculation:**
+Solving for the 1Y IBOR Zero rate () that equates these legs results in:
+* **IBOR Zero (1Y):** 
+* **Discount Zero (1Y):** 
+
+
+
+### Summary for your Code Structure
+
+When writing your program:
+
+1. **Initialize T=0.5:** Hardcode or set the first curve point using the fixing () and the spread ().
+2. **Bootstrap Loop:** For each subsequent swap (1Y, 2Y, etc.), use a solver (like Newton-Raphson) to find the specific **IBOR Zero Rate** that sets the Net Present Value (NPV) of that swap to zero.
+3. **Linked Curves:** Ensure your solver updates the Discount Zero Rate () simultaneously in every iteration of the solver.

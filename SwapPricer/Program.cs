@@ -43,13 +43,12 @@ class Program
         var pricerService = new SwapPricerService();
         var riskCalculator = new RiskCalculator(pricerService);
 
-        // Question 1: Build IBOR and Discount Curves
+        // Question 1: Build IBOR and Discount Curves using dual-curve methodology
         Console.WriteLine("\n" + "=".PadRight(70, '='));
-        Console.WriteLine("QUESTION 1: Curve Construction");
+        Console.WriteLine("QUESTION 1: Curve Construction (Dual-Curve Bootstrap)");
         Console.WriteLine("=".PadRight(70, '='));
 
-        var iborCurve = bootstrapper.BootstrapIborCurve(referenceDate, MarketQuotes);
-        var discountCurve = bootstrapper.CreateDiscountCurve(iborCurve, DiscountSpreadBps);
+        var (iborCurve, discountCurve) = bootstrapper.BootstrapCurves(referenceDate, MarketQuotes);
 
         Console.WriteLine($"\nDiscount spread: {DiscountSpreadBps} bps over IBOR curve");
         Console.WriteLine("Float leg: semi-annual reset/pay");
