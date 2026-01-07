@@ -87,7 +87,7 @@ class Program
             WriteLine($"\nResults:");
             WriteLine($"  Par Swap Rate: {parRate * 100:F6}%");
 
-            var riskMetrics = riskCalculator.CalculateRiskMetrics(swap, iborCurve, discountCurve, referenceDate);
+            var riskMetrics = riskCalculator.CalculateRiskMetrics(swap, MarketQuotes, referenceDate);
             WriteLine($"  DV01: {riskMetrics.DV01:F2}");
             WriteLine($"  Gamma: {riskMetrics.Gamma:F2}");
 

@@ -19,24 +19,24 @@ Spot lag: Zero
 IBOR (Forward) Curve:
 Time (Y)   Zero Rate (%)   Discount Factor
 ----------------------------------------
-0.5000     4.110000        0.97986380     
-1.0000     4.143756        0.96021120     
-2.0000     3.796139        0.92943472     
-3.0000     3.592957        0.90269923     
-5.0000     3.401978        0.85462861     
-7.0000     3.393841        0.80803582     
-10.0000    3.527221        0.73925014     
+0.5000     4.110000        0.97965971     
+1.0000     4.080910        0.96001238     
+2.0000     3.669618        0.92923615     
+3.0000     3.419598        0.90249878     
+5.0000     3.145586        0.85446536     
+7.0000     3.047966        0.80786719     
+10.0000    3.021464        0.73922980     
 
 Discount Curve:
 Time (Y)   Zero Rate (%)   Discount Factor
 ----------------------------------------
-0.5000     3.730000        0.98169145     
-1.0000     3.763756        0.96372765     
-2.0000     3.416139        0.93604668     
-3.0000     3.212957        0.91208529     
-5.0000     3.021978        0.86873508     
-7.0000     3.013841        0.82578504     
-10.0000    3.147221        0.76061702     
+0.5000     3.730000        0.98152284     
+1.0000     3.700910        0.96366736     
+2.0000     3.289618        0.93632525     
+3.0000     3.039598        0.91284613     
+5.0000     2.765586        0.87085542     
+7.0000     2.667966        0.82964481     
+10.0000    2.641464        0.76786109     
 
 ======================================================================
 QUESTION 2: 9Y Par Swap Pricing
@@ -49,11 +49,11 @@ Swap Details:
   Notional: 1,000,000
 
 Results:
-  Par Swap Rate: 3.091401%
-  DV01: -625.12
-  Gamma: 0.83
+  Par Swap Rate: 3.091520%
+  DV01: -784.37
+  Gamma: 0.73
 
-  Verification - Par Swap PV: 0.00 (should be ~0)
+  Verification - Par Swap PV: -0.00 (should be ~0)
 
 ======================================================================
 QUESTION 3: Valuation 3 Months Later (Linear Interpolation)
@@ -63,11 +63,11 @@ Valuation Date: 2026-04-07
 (Assuming curve unchanged)
 
 Results:
-  Fixed Leg Accrual: 7622.63
+  Fixed Leg Accrual: 7622.92
   Float Leg Accrual: 10134.25
-  Net Accrual (Fixed - Float): -2511.61
-  Dirty PV: -3210.46
-  Clean PV: -698.85
+  Net Accrual (Fixed - Float): -2511.32
+  Dirty PV: -2428.02
+  Clean PV: 83.30
 
 ======================================================================
 QUESTION 4: Cubic Spline Interpolation
@@ -78,18 +78,18 @@ Boundary conditions:
   f''(0) = f''(10Y) = 0
 
 Results (with Cubic Spline for IBOR curve):
-  Fixed Leg Accrual: 7622.63
-  Float Leg Accrual: 10133.72
-  Net Accrual (Fixed - Float): -2511.08
-  Dirty PV: -2758.28
-  Clean PV: -247.20
+  Fixed Leg Accrual: 7622.92
+  Float Leg Accrual: 10134.20
+  Net Accrual (Fixed - Float): -2511.27
+  Dirty PV: -1980.23
+  Clean PV: 531.05
 
 ======================================================================
 Comparison: Linear vs Cubic Spline
 ======================================================================
-  Clean PV (Linear):       -698.85
-  Clean PV (Cubic Spline): -247.20
-  Difference:              451.65
+  Clean PV (Linear):       83.30
+  Clean PV (Cubic Spline): 531.05
+  Difference:              447.75
 
 ======================================================================
 Exercise Complete

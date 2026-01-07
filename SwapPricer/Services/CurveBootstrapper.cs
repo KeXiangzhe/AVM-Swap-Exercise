@@ -85,7 +85,6 @@ public class CurveBootstrapper
 
             if (Math.Abs(npv) < Tolerance)
             {
-                Console.WriteLine($"  Bootstrap {tenorYears}Y: iborRate={iborRate*100:F4}%, discRate={discRate*100:F4}%, iterations={iter+1}");
                 return iborRate;
             }
 
@@ -104,7 +103,6 @@ public class CurveBootstrapper
             iborRate = iborRate - npv / derivative;
         }
 
-        Console.WriteLine($"  Bootstrap {tenorYears}Y: iborRate={iborRate*100:F4}% (max iterations reached)");
         return iborRate;
     }
 
@@ -176,6 +174,7 @@ public class CurveBootstrapper
 
     /// <summary>
     /// Gets discount factor, using the new rate if at or beyond the new tenor point.
+    /// Uses continuous compounding: DF = exp(-r * t)
     /// </summary>
     private double GetDiscountFactor(Curve curve, double t, double newRate, double newTenor)
     {
@@ -194,7 +193,7 @@ public class CurveBootstrapper
             rate = curve.GetZeroRate(t);
         }
 
-        return 1.0 / (1.0 + rate * t);
+        return Math.Exp(-rate * t);
     }
 
     /// <summary>
