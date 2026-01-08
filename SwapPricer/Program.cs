@@ -144,6 +144,39 @@ class Program
             WriteLine($"  Dirty PV: {dirtyPVSpline:F2}");
             WriteLine($"  Clean PV: {cleanPVSpline:F2}");
 
+            // Diagnostic: Compare zero rates and forward rates
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("DIAGNOSTIC: Zero Rate Comparison (Linear vs Spline)");
+            WriteLine("=".PadRight(70, '='));
+            WriteLine($"{"Time",-8} {"Linear %",-12} {"Spline %",-12} {"Diff (bps)",-12}");
+            WriteLine(new string('-', 44));
+
+            double[] diagTimes = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 8.75 };
+            foreach (var t in diagTimes)
+            {
+                double linearRate = iborCurve3M.GetZeroRate(t);
+                double splineRate = iborCurve3MSpline.GetZeroRate(t);
+                double diffBps = (splineRate - linearRate) * 10000;
+                WriteLine($"{t,-8:F2} {linearRate * 100,-12:F6} {splineRate * 100,-12:F6} {diffBps,-12:F2}");
+            }
+
+            WriteLine("\n" + "=".PadRight(70, '='));
+            WriteLine("DIAGNOSTIC: Forward Rate Comparison (Linear vs Spline)");
+            WriteLine("=".PadRight(70, '='));
+            WriteLine($"{"Period",-12} {"Linear %",-12} {"Spline %",-12} {"Diff (bps)",-12}");
+            WriteLine(new string('-', 48));
+
+            // Compare forward rates for each floating period (excluding first period which uses fixing)
+            double[] fwdStarts = { 0.25, 0.75, 1.25, 1.75, 2.25, 2.75, 3.25, 3.75, 4.25, 4.75, 5.25, 5.75, 6.25, 6.75, 7.25, 7.75, 8.25 };
+            foreach (var tStart in fwdStarts)
+            {
+                double tEnd = tStart + 0.5;
+                double linearFwd = iborCurve3M.GetForwardRate(tStart, tEnd);
+                double splineFwd = iborCurve3MSpline.GetForwardRate(tStart, tEnd);
+                double diffBps = (splineFwd - linearFwd) * 10000;
+                WriteLine($"{tStart:F2}-{tEnd:F2}    {linearFwd * 100,-12:F6} {splineFwd * 100,-12:F6} {diffBps,-12:F2}");
+            }
+
             WriteLine("\n" + "=".PadRight(70, '='));
             WriteLine("Comparison: Linear vs Cubic Spline");
             WriteLine("=".PadRight(70, '='));
@@ -186,34 +219,19 @@ class Program
     }
 
     /// <summary>
-    /// Creates a new curve with shifted reference date but same zero rates.
-    /// This simulates "curve unchanged" scenario.
+    /// Creates a new curve with shifted reference date but ORIGINAL knots.
+    /// "Curve unchanged" means the same rates apply at the same maturities.
+    /// Query at t=0.75 interpolates between original 6M and 1Y points.
     /// </summary>
     private static Curve ShiftCurveReferenceDate(Curve originalCurve, DateTime newReferenceDate, bool useSpline = false)
     {
         var newCurve = new Curve(newReferenceDate);
 
-        // Calculate time shift
-        double timeShift = DateUtils.YearFraction(originalCurve.ReferenceDate, newReferenceDate);
-
-        // Add points with adjusted times
+        // Keep original knot times (0.5, 1.0, 2.0, ...) - don't shift!
+        // This matches Gemini: query original curve at new time-to-maturity
         for (int i = 0; i < originalCurve.Times.Count; i++)
         {
-            double newTime = originalCurve.Times[i] - timeShift;
-            if (newTime > 0)
-            {
-                newCurve.AddPoint(newTime, originalCurve.ZeroRates[i]);
-            }
-        }
-
-        // Apply cubic spline interpolation if requested
-        if (useSpline && newCurve.Times.Count >= 2)
-        {
-            var spline = new CubicSplineInterpolator(
-                newCurve.Times.ToArray(),
-                newCurve.ZeroRates.ToArray(),
-                addZeroPoint: true);
-            newCurve.SetInterpolator(spline);
+            newCurve.AddPoint(originalCurve.Times[i], originalCurve.ZeroRates[i]);
         }
 
         return newCurve;
